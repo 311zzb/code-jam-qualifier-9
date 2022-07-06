@@ -1,4 +1,5 @@
 import typing
+from random import randrange
 from dataclasses import dataclass
 
 
@@ -31,4 +32,46 @@ class RestaurantManager:
             Request object containing information about the sent
             request to your application.
         """
-        ...
+        # Get the scope from the request
+        scope: typing.Mapping[str, typing.Any] = request.scope
+
+        # Get the type of the request
+        request_type: str = scope['type']
+
+        # React to the request
+        match request_type:
+            case 'staff.onduty':
+                staff_id: str = scope['id']
+                self.staff[staff_id] = request
+            case 'staff.offduty':
+                staff_id: str = scope['id']
+                del self.staff[staff_id]
+            case 'order':
+                order_speciality: str = scope['speciality']
+                available_staffs: typing.List[Request] = self.find_staffs(order_speciality)
+                # TODO: deal with the case when there is no staff available
+                chosen_staff: Request = available_staffs[randrange(len(available_staffs))]
+                await self.order_io(request, chosen_staff)
+
+    async def order_io(self, order_request: Request, staff: Request) -> None:
+        """Handle an order request.
+
+        :param order_request: request object
+            The order request object.
+        :param staff: request object
+            The chosen staff object.
+        """
+        full_order = await order_request.receive()
+        # TODO: mark the staff is currently busy?
+        await staff.send(full_order)
+
+        result = await staff.receive()
+        await order_request.send(result)
+
+    def find_staffs(self, speciality: str) -> typing.List[Request]:
+        """Find staff with the given speciality.
+
+        :param speciality: speciality to look for
+        :return: list of staff with the given speciality
+        """
+        return [s for s in self.staff.values() if speciality in s.scope['speciality']]
